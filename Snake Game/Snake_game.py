@@ -8,15 +8,15 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Snake Game")
 
 # Colors
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-GREEN = (0, 255, 0)
-RED = (255, 0, 0)
-YELLOW = (255, 255, 0)
-CYAN = (0, 255, 255)
-PURPLE = (180, 0, 255)
-ORANGE = (255, 165, 0)
-BLUE = (0, 120, 255)
+WHITE = (235, 235, 235)
+BLACK = (18, 18, 18)
+GREEN = (70, 180, 95)
+RED = (220, 80, 80)
+YELLOW = (220, 190, 80)
+CYAN = (90, 180, 200)
+PURPLE = (150, 95, 180)
+ORANGE = (220, 150, 90)
+BLUE = (75, 110, 200)
 
 # Snake settings
 SNAKE_SIZE = 20
@@ -24,12 +24,24 @@ EASY_SPEED = 10
 NORMAL_SPEED = 15
 HARD_SPEED = 20
 
+# Obstacle and food settings
+REVERSE_OBSTACLE = "reverse"
+DEADLY_OBSTACLE = "deadly"
+FOOD_TYPES = {
+    "normal": {"color": RED, "length_gain": 1},
+    "bonus": {"color": YELLOW, "length_gain": 2},
+    "poison": {"color": PURPLE, "length_gain": 0},
+}
+
 # Font settings
 font = pygame.font.SysFont("comicsans", 25)
 clock = pygame.time.Clock()
 
 
 def draw_text(text, color, x, y, bg_color=None):
+    shadow_color = (8, 8, 8)
+    shadow_msg = font.render(text, True, shadow_color, bg_color)
+    screen.blit(shadow_msg, [x + 2, y + 2])
     msg = font.render(text, True, color, bg_color)
     screen.blit(msg, [x, y])
 
@@ -77,8 +89,62 @@ def draw_snake(snake_list):
 
 
 def message(text, color):
-    msg = font.render(text, True, color)
-    screen.blit(msg, [WIDTH / 6, HEIGHT / 3])
+    draw_text(text, color, WIDTH / 6, HEIGHT / 3)
+
+
+def spawn_obstacles(snake_list):
+    obstacles = []
+    blocked_positions = {(segment[0], segment[1]) for segment in snake_list}
+
+    while len(obstacles) < 6:
+        x = round(random.randrange(0, WIDTH - SNAKE_SIZE) / 20.0) * 20.0
+        y = round(random.randrange(0, HEIGHT - SNAKE_SIZE) / 20.0) * 20.0
+
+        if (x, y) in blocked_positions:
+            continue
+        if any(abs(x - obstacle["x"]) < SNAKE_SIZE and abs(y - obstacle["y"]) < SNAKE_SIZE for obstacle in obstacles):
+            continue
+
+        kind = random.choice([REVERSE_OBSTACLE, DEADLY_OBSTACLE])
+        obstacles.append({"x": x, "y": y, "kind": kind})
+
+    return obstacles
+
+
+def spawn_food(snake_list, obstacles):
+    blocked_positions = {(segment[0], segment[1]) for segment in snake_list}
+    blocked_positions.update((obstacle["x"], obstacle["y"]) for obstacle in obstacles)
+
+    while True:
+        x = round(random.randrange(0, WIDTH - SNAKE_SIZE) / 20.0) * 20.0
+        y = round(random.randrange(0, HEIGHT - SNAKE_SIZE) / 20.0) * 20.0
+        if (x, y) in blocked_positions:
+            continue
+
+        food_type = random.choices(list(FOOD_TYPES.keys()), weights=[0.7, 0.2, 0.1])[0]
+        return x, y, food_type
+
+
+def apply_obstacle_effect(x_change, y_change, obstacle):
+    if obstacle["kind"] == REVERSE_OBSTACLE:
+        return -x_change, -y_change, False
+    return x_change, y_change, True
+
+
+def draw_obstacles(obstacles):
+    for obstacle in obstacles:
+        color = CYAN if obstacle["kind"] == REVERSE_OBSTACLE else ORANGE
+        pygame.draw.rect(screen, color, [obstacle["x"], obstacle["y"], SNAKE_SIZE, SNAKE_SIZE])
+
+        if obstacle["kind"] == REVERSE_OBSTACLE:
+            pygame.draw.line(screen, WHITE, (obstacle["x"] + 4, obstacle["y"] + 4), (obstacle["x"] + SNAKE_SIZE - 4, obstacle["y"] + SNAKE_SIZE - 4), 2)
+        else:
+            pygame.draw.line(screen, WHITE, (obstacle["x"] + 4, obstacle["y"] + 4), (obstacle["x"] + SNAKE_SIZE - 4, obstacle["y"] + SNAKE_SIZE - 4), 2)
+            pygame.draw.line(screen, WHITE, (obstacle["x"] + SNAKE_SIZE - 4, obstacle["y"] + 4), (obstacle["x"] + 4, obstacle["y"] + SNAKE_SIZE - 4), 2)
+
+
+def draw_food(foodx, foody, food_type):
+    pygame.draw.rect(screen, FOOD_TYPES[food_type]["color"], [foodx, foody, SNAKE_SIZE, SNAKE_SIZE])
 
 
 def game(snake_speed):
@@ -92,9 +158,8 @@ def game(snake_speed):
 
     snake_list = [[x, y]]
     length_of_snake = 1
-
-    foodx = round(random.randrange(0, WIDTH - SNAKE_SIZE) / 20.0) * 20.0
-    foody = round(random.randrange(0, HEIGHT - SNAKE_SIZE) / 20.0) * 20.0
+    obstacles = spawn_obstacles(snake_list)
+    foodx, foody, food_type = spawn_food(snake_list, obstacles)
 
     while not game_over:
         while game_close:
@@ -140,7 +205,9 @@ def game(snake_speed):
             game_close = True
 
         screen.fill(BLACK)
-        pygame.draw.rect(screen, RED, [foodx, foody, SNAKE_SIZE, SNAKE_SIZE])
+        draw_obstacles(obstacles)
+        draw_food(foodx, foody, food_type)
+
         snake_head = [x, y]
         snake_list.append(snake_head)
 
@@ -151,16 +218,25 @@ def game(snake_speed):
             if segment == snake_head:
                 game_close = True
 
+        for obstacle in obstacles:
+            if snake_head[0] == obstacle["x"] and snake_head[1] == obstacle["y"]:
+                x_change, y_change, hit_deadly = apply_obstacle_effect(x_change, y_change, obstacle)
+                if hit_deadly:
+                    game_close = True
+                break
+
         draw_snake(snake_list)
 
-        score_text = font.render("Score: " + str(length_of_snake - 1), True, WHITE)
-        screen.blit(score_text, [0, 0])
+        draw_text("Score: " + str(length_of_snake - 1), WHITE, 5, 5)
         pygame.display.update()
 
         if x == foodx and y == foody:
-            foodx = round(random.randrange(0, WIDTH - SNAKE_SIZE) / 20.0) * 20.0
-            foody = round(random.randrange(0, HEIGHT - SNAKE_SIZE) / 20.0) * 20.0
-            length_of_snake += 1
+            if food_type == "poison":
+                game_close = True
+            else:
+                gain = FOOD_TYPES[food_type]["length_gain"]
+                foodx, foody, food_type = spawn_food(snake_list, obstacles)
+                length_of_snake += gain
 
         clock.tick(snake_speed)
 
