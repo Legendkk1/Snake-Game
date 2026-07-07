@@ -70,6 +70,15 @@ if pygame.mixer.init is not None:
     SOUNDS["levelup"] = make_sound(1040, 0.14, 0.08)
 
 
+
+# Background Music
+MUSIC_FILE = os.path.join(os.path.dirname(__file__), "lofi.mp3")
+try:
+    pygame.mixer.music.load(MUSIC_FILE)
+    pygame.mixer.music.set_volume(0.30)
+except pygame.error:
+    print("Could not load lofi.mp3")
+
 background_image = pygame.image.load(os.path.join(os.path.dirname(__file__), "snake.png"))
 background_image = pygame.transform.scale(background_image, (WIDTH, HEIGHT))
 
@@ -125,6 +134,7 @@ def start_menu():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                pygame.mixer.music.fadeout(2000)
                 pygame.quit()
                 quit()
             if event.type == pygame.KEYDOWN:
@@ -198,7 +208,7 @@ def spawn_food(snake_list, obstacles, walls=None):
         if (x, y) in blocked_positions:
             continue
 
-        food_type = random.choices(list(FOOD_TYPES.keys()), weights=[0.6, 0.2, 0.1, 0.1])[0]
+        food_type = random.choices(list(FOOD_TYPES.keys()), weights=[0.4, 0.15, 0.2, 0.25])[0]
         return x, y, food_type
 
 
@@ -250,6 +260,7 @@ def game(snake_speed):
         while game_close:
             if not game_over_sound_played:
                 play_sound("lose")
+                pygame.mixer.music.pause()
                 game_over_sound_played = True
             draw_background()
             message("You lost! Press Q-Quit or C-Play Again", RED)
@@ -260,8 +271,10 @@ def game(snake_speed):
                     return True
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_q:
+                        pygame.mixer.music.fadeout(1000)
                         return True
                     if event.key == pygame.K_c:
+                        pygame.mixer.music.unpause()
                         return False
 
         for event in pygame.event.get():
@@ -280,9 +293,6 @@ def game(snake_speed):
                 elif event.key == pygame.K_DOWN and y_change != -SNAKE_SIZE:
                     y_change = SNAKE_SIZE
                     x_change = 0
-
-        if x >= WIDTH or x < 0 or y >= HEIGHT or y < 0:
-            game_close = True
 
         x += x_change
         y += y_change
@@ -357,9 +367,11 @@ def game(snake_speed):
 
 
 if __name__ == "__main__":
+    pygame.mixer.music.play(-1, fade_ms=2000)
     while True:
         selected_speed = start_menu()
         should_quit = game(selected_speed)
         if should_quit:
             break
+    pygame.mixer.music.fadeout(2000)
     pygame.quit()
