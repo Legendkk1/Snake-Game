@@ -200,32 +200,86 @@ def resolve_food_effect(food_type, x_change, y_change):
     return "grow", x_change, y_change
 
 
-def spawn_food(snake_list, obstacles, walls=None):
+def get_special_food_count(snake_speed):
+    if snake_speed >= HARD_SPEED:
+        return 3
+    if snake_speed >= NORMAL_SPEED:
+        return 2
+    return 1
+
+
+def find_valid_food_position(snake_list, obstacles, walls=None, occupied_positions=None, min_spacing=SNAKE_SIZE * 2):
     blocked_positions = {(segment[0], segment[1]) for segment in snake_list}
     blocked_positions.update((obstacle["x"], obstacle["y"]) for obstacle in obstacles)
     if walls is not None:
         blocked_positions.update((wall["x"], wall["y"]) for wall in walls)
+    if occupied_positions:
+        blocked_positions.update(occupied_positions)
 
-    while True:
+    for _ in range(4000):
         x = round(random.randrange(0, WIDTH - SNAKE_SIZE) / 20.0) * 20.0
         y = round(random.randrange(0, HEIGHT - SNAKE_SIZE) / 20.0) * 20.0
-        if (x, y) in blocked_positions:
+        pos = (x, y)
+        if pos in blocked_positions:
             continue
-        return x, y, "normal"
+        if occupied_positions:
+            if any(abs(x - existing_x) < min_spacing and abs(y - existing_y) < min_spacing for existing_x, existing_y in occupied_positions):
+                continue
+        return pos
+    return None
+
+
+def build_food_items(snake_list, obstacles, walls=None, snake_speed=NORMAL_SPEED):
+    active_foods = []
+    occupied_positions = set()
+
+    normal_pos = find_valid_food_position(snake_list, obstacles, walls, occupied_positions)
+    if normal_pos is None:
+        return active_foods
+
+    x, y = normal_pos
+    active_foods.append((x, y, "normal"))
+    occupied_positions.add((x, y))
+
+    for _ in range(get_special_food_count(snake_speed)):
+        poison_pos = find_valid_food_position(snake_list, obstacles, walls, occupied_positions)
+        if poison_pos is None:
+            break
+        x, y = poison_pos
+        active_foods.append((x, y, "poison"))
+        occupied_positions.add((x, y))
+
+    return active_foods
+
+
+def spawn_normal_food(snake_list, obstacles, walls, active_foods):
+    occupied_positions = {(segment[0], segment[1]) for segment in snake_list}
+    occupied_positions.update((obstacle["x"], obstacle["y"]) for obstacle in obstacles)
+    if walls is not None:
+        occupied_positions.update((wall["x"], wall["y"]) for wall in walls)
+    occupied_positions.update((food[0], food[1]) for food in active_foods)
+
+    pos = find_valid_food_position(snake_list, obstacles, walls, occupied_positions)
+    if pos is None:
+        return None
+    x, y = pos
+    return x, y, "normal"
+
+
+def spawn_food(snake_list, obstacles, walls=None):
+    pos = find_valid_food_position(snake_list, obstacles, walls)
+    if pos is None:
+        return None, None, "normal"
+    x, y = pos
+    return x, y, "normal"
 
 
 def create_poison_food(snake_list, obstacles, walls=None):
-    blocked_positions = {(segment[0], segment[1]) for segment in snake_list}
-    blocked_positions.update((obstacle["x"], obstacle["y"]) for obstacle in obstacles)
-    if walls is not None:
-        blocked_positions.update((wall["x"], wall["y"]) for wall in walls)
-
-    while True:
-        x = round(random.randrange(0, WIDTH - SNAKE_SIZE) / 20.0) * 20.0
-        y = round(random.randrange(0, HEIGHT - SNAKE_SIZE) / 20.0) * 20.0
-        if (x, y) in blocked_positions:
-            continue
-        return x, y, "poison"
+    pos = find_valid_food_position(snake_list, obstacles, walls)
+    if pos is None:
+        return None, None, "poison"
+    x, y = pos
+    return x, y, "poison"
 
 
 def apply_obstacle_effect(x_change, y_change, obstacle):
@@ -273,9 +327,7 @@ def game(snake_speed):
     level = get_level(0)
     walls = create_maze_walls() if level == 2 else []
     obstacles = spawn_obstacles(snake_list, level)
-    foodx, foody, food_type = spawn_food(snake_list, obstacles, walls)
-    poison_food = create_poison_food(snake_list, obstacles, walls)
-    active_foods = [(foodx, foody, food_type), poison_food]
+    active_foods = build_food_items(snake_list, obstacles, walls, snake_speed)
 
     game_over_sound_played = False
 
@@ -384,11 +436,6 @@ def game(snake_speed):
             else:
                 play_sound("eat")
                 gain = FOOD_TYPES[food_type]["length_gain"]
-                if active_foods:
-                    foodx, foody, food_type = active_foods[0]
-                else:
-                    foodx, foody, food_type = spawn_food(snake_list, obstacles, walls)
-                    active_foods.append((foodx, foody, food_type))
                 length_of_snake += gain
     return True
 
