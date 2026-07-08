@@ -437,6 +437,10 @@ def game(snake_speed):
                 play_sound("eat")
                 gain = FOOD_TYPES[food_type]["length_gain"]
                 length_of_snake += gain
+                if food_type == "normal":
+                    new_food = spawn_normal_food(snake_list, obstacles, walls, active_foods)
+                    if new_food is not None:
+                        active_foods.append(new_food)
     return True
 
 
