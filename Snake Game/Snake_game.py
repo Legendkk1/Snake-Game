@@ -31,10 +31,11 @@ HARD_SPEED = 12
 REVERSE_OBSTACLE = "reverse"
 DEADLY_OBSTACLE = "deadly"
 FOOD_TYPES = {
-    "normal": {"color": RED, "length_gain": 1},
-    "bonus": {"color": YELLOW, "length_gain": 2},
-    "poison": {"color": PURPLE, "length_gain": 0},
-    "reverse": {"color": BLUE, "length_gain": 0},
+    "normal": {"color": RED, "length_gain": 1, "effect": "grow"},
+    "bonus": {"color": YELLOW, "length_gain": 2, "effect": "grow"},
+    "poison": {"color": PURPLE, "length_gain": 0, "effect": "lose"},
+    "reverse": {"color": BLUE, "length_gain": 0, "effect": "reverse"},
+    "kill": {"color": (255, 40, 40), "length_gain": 0, "effect": "lose"},
 }
 
 # Font settings
@@ -196,6 +197,14 @@ def spawn_obstacles(snake_list, level=1):
     return obstacles
 
 
+def resolve_food_effect(food_type, x_change, y_change):
+    if food_type == "reverse":
+        return "reverse", -x_change if x_change != 0 else x_change, -y_change if y_change != 0 else y_change
+    if food_type in {"poison", "kill"}:
+        return "lose", x_change, y_change
+    return "grow", x_change, y_change
+
+
 def spawn_food(snake_list, obstacles, walls=None):
     blocked_positions = {(segment[0], segment[1]) for segment in snake_list}
     blocked_positions.update((obstacle["x"], obstacle["y"]) for obstacle in obstacles)
@@ -207,9 +216,27 @@ def spawn_food(snake_list, obstacles, walls=None):
         y = round(random.randrange(0, HEIGHT - SNAKE_SIZE) / 20.0) * 20.0
         if (x, y) in blocked_positions:
             continue
+        return x, y, "normal"
 
-        food_type = random.choices(list(FOOD_TYPES.keys()), weights=[0.4, 0.15, 0.2, 0.25])[0]
-        return x, y, food_type
+
+def create_special_foods(snake_list, obstacles, walls=None, count=4):
+    blocked_positions = {(segment[0], segment[1]) for segment in snake_list}
+    blocked_positions.update((obstacle["x"], obstacle["y"]) for obstacle in obstacles)
+    if walls is not None:
+        blocked_positions.update((wall["x"], wall["y"]) for wall in walls)
+
+    foods = []
+    special_types = ["bonus", "poison", "reverse", "kill"]
+    for food_type in special_types[:count]:
+        while True:
+            x = round(random.randrange(0, WIDTH - SNAKE_SIZE) / 20.0) * 20.0
+            y = round(random.randrange(0, HEIGHT - SNAKE_SIZE) / 20.0) * 20.0
+            if (x, y) in blocked_positions:
+                continue
+            foods.append((x, y, food_type))
+            blocked_positions.add((x, y))
+            break
+    return foods
 
 
 def apply_obstacle_effect(x_change, y_change, obstacle):
@@ -235,7 +262,12 @@ def draw_obstacles(obstacles, walls=None):
 
 
 def draw_food(foodx, foody, food_type):
-    pygame.draw.rect(screen, FOOD_TYPES[food_type]["color"], [foodx, foody, SNAKE_SIZE, SNAKE_SIZE])
+    color = FOOD_TYPES[food_type]["color"]
+    pygame.draw.rect(screen, color, [foodx, foody, SNAKE_SIZE, SNAKE_SIZE])
+    if food_type == "kill":
+        pygame.draw.rect(screen, WHITE, [foodx + 4, foody + 4, SNAKE_SIZE - 8, SNAKE_SIZE - 8], 2)
+        pygame.draw.line(screen, WHITE, (foodx + 4, foody + 4), (foodx + SNAKE_SIZE - 4, foody + SNAKE_SIZE - 4), 2)
+        pygame.draw.line(screen, WHITE, (foodx + SNAKE_SIZE - 4, foody + 4), (foodx + 4, foody + SNAKE_SIZE - 4), 2)
 
 
 def game(snake_speed):
@@ -253,6 +285,8 @@ def game(snake_speed):
     walls = create_maze_walls() if level == 2 else []
     obstacles = spawn_obstacles(snake_list, level)
     foodx, foody, food_type = spawn_food(snake_list, obstacles, walls)
+    special_foods = create_special_foods(snake_list, obstacles, walls, count=4)
+    active_foods = [(foodx, foody, food_type)] + special_foods
 
     game_over_sound_played = False
 
@@ -310,7 +344,8 @@ def game(snake_speed):
 
         draw_background(level)
         draw_obstacles(obstacles, walls)
-        draw_food(foodx, foody, food_type)
+        for food_pos in active_foods:
+            draw_food(*food_pos)
 
         snake_head = [x, y]
         snake_list.append(snake_head)
@@ -344,34 +379,56 @@ def game(snake_speed):
         pygame.display.update()
         clock.tick(snake_speed)
 
-        if x == foodx and y == foody:
-            if food_type == "poison":
+        eaten_food = None
+        for food in active_foods:
+            if x == food[0] and y == food[1]:
+                eaten_food = food
+                break
+
+        if eaten_food is not None:
+            foodx, foody, food_type = eaten_food
+            effect, x_change, y_change = resolve_food_effect(food_type, x_change, y_change)
+            active_foods.remove(eaten_food)
+            if effect == "lose":
                 play_sound("lose")
                 game_close = True
-            elif food_type == "reverse":
+            elif effect == "reverse":
                 play_sound("reverse")
-                if x_change != 0:
-                    x_change = -x_change
-                elif y_change != 0:
-                    y_change = -y_change
-                foodx, foody, food_type = spawn_food(snake_list, obstacles, walls)
+                if active_foods:
+                    foodx, foody, food_type = active_foods[0]
+                else:
+                    foodx, foody, food_type = spawn_food(snake_list, obstacles, walls)
             else:
                 if food_type == "bonus":
                     play_sound("bonus")
                 else:
                     play_sound("eat")
                 gain = FOOD_TYPES[food_type]["length_gain"]
-                foodx, foody, food_type = spawn_food(snake_list, obstacles, walls)
+                if active_foods:
+                    foodx, foody, food_type = active_foods[0]
+                else:
+                    foodx, foody, food_type = spawn_food(snake_list, obstacles, walls)
                 length_of_snake += gain
     return True
 
 
+def main():
+    try:
+        pygame.mixer.music.play(-1, fade_ms=2000)
+        while True:
+            selected_speed = start_menu()
+            should_quit = game(selected_speed)
+            if should_quit:
+                break
+    except KeyboardInterrupt:
+        print("Exit requested. Closing Snake Game...")
+    finally:
+        try:
+            pygame.mixer.music.fadeout(2000)
+        except Exception:
+            pass
+        pygame.quit()
+
+
 if __name__ == "__main__":
-    pygame.mixer.music.play(-1, fade_ms=2000)
-    while True:
-        selected_speed = start_menu()
-        should_quit = game(selected_speed)
-        if should_quit:
-            break
-    pygame.mixer.music.fadeout(2000)
-    pygame.quit()
+    main()
