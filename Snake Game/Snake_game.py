@@ -32,10 +32,7 @@ REVERSE_OBSTACLE = "reverse"
 DEADLY_OBSTACLE = "deadly"
 FOOD_TYPES = {
     "normal": {"color": RED, "length_gain": 1, "effect": "grow"},
-    "bonus": {"color": YELLOW, "length_gain": 2, "effect": "grow"},
     "poison": {"color": PURPLE, "length_gain": 0, "effect": "lose"},
-    "reverse": {"color": BLUE, "length_gain": 0, "effect": "reverse"},
-    "kill": {"color": (255, 40, 40), "length_gain": 0, "effect": "lose"},
 }
 
 # Font settings
@@ -198,9 +195,7 @@ def spawn_obstacles(snake_list, level=1):
 
 
 def resolve_food_effect(food_type, x_change, y_change):
-    if food_type == "reverse":
-        return "reverse", -x_change if x_change != 0 else x_change, -y_change if y_change != 0 else y_change
-    if food_type in {"poison", "kill"}:
+    if food_type == "poison":
         return "lose", x_change, y_change
     return "grow", x_change, y_change
 
@@ -219,24 +214,18 @@ def spawn_food(snake_list, obstacles, walls=None):
         return x, y, "normal"
 
 
-def create_special_foods(snake_list, obstacles, walls=None, count=4):
+def create_poison_food(snake_list, obstacles, walls=None):
     blocked_positions = {(segment[0], segment[1]) for segment in snake_list}
     blocked_positions.update((obstacle["x"], obstacle["y"]) for obstacle in obstacles)
     if walls is not None:
         blocked_positions.update((wall["x"], wall["y"]) for wall in walls)
 
-    foods = []
-    special_types = ["bonus", "poison", "reverse", "kill"]
-    for food_type in special_types[:count]:
-        while True:
-            x = round(random.randrange(0, WIDTH - SNAKE_SIZE) / 20.0) * 20.0
-            y = round(random.randrange(0, HEIGHT - SNAKE_SIZE) / 20.0) * 20.0
-            if (x, y) in blocked_positions:
-                continue
-            foods.append((x, y, food_type))
-            blocked_positions.add((x, y))
-            break
-    return foods
+    while True:
+        x = round(random.randrange(0, WIDTH - SNAKE_SIZE) / 20.0) * 20.0
+        y = round(random.randrange(0, HEIGHT - SNAKE_SIZE) / 20.0) * 20.0
+        if (x, y) in blocked_positions:
+            continue
+        return x, y, "poison"
 
 
 def apply_obstacle_effect(x_change, y_change, obstacle):
@@ -285,8 +274,8 @@ def game(snake_speed):
     walls = create_maze_walls() if level == 2 else []
     obstacles = spawn_obstacles(snake_list, level)
     foodx, foody, food_type = spawn_food(snake_list, obstacles, walls)
-    special_foods = create_special_foods(snake_list, obstacles, walls, count=4)
-    active_foods = [(foodx, foody, food_type)] + special_foods
+    poison_food = create_poison_food(snake_list, obstacles, walls)
+    active_foods = [(foodx, foody, food_type), poison_food]
 
     game_over_sound_played = False
 
@@ -392,17 +381,8 @@ def game(snake_speed):
             if effect == "lose":
                 play_sound("lose")
                 game_close = True
-            elif effect == "reverse":
-                play_sound("reverse")
-                if active_foods:
-                    foodx, foody, food_type = active_foods[0]
-                else:
-                    foodx, foody, food_type = spawn_food(snake_list, obstacles, walls)
             else:
-                if food_type == "bonus":
-                    play_sound("bonus")
-                else:
-                    play_sound("eat")
+                play_sound("eat")
                 gain = FOOD_TYPES[food_type]["length_gain"]
                 if active_foods:
                     foodx, foody, food_type = active_foods[0]
