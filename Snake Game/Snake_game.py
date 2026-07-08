@@ -388,6 +388,7 @@ def game(snake_speed):
                     foodx, foody, food_type = active_foods[0]
                 else:
                     foodx, foody, food_type = spawn_food(snake_list, obstacles, walls)
+                    active_foods.append((foodx, foody, food_type))
                 length_of_snake += gain
     return True
 
